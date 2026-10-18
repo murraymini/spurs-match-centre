@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Spurs Match Centre</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: stadium-board scoreboard on top, sticky section nav, then a two-column match sheet (pitch + stats | live feed) that stacks on phones. */
+:root{
+  --bg:#f3f4f8; --surface:#ffffff; --ink:#0e1838; --muted:#5b6382; --line:#dde1ec;
+  --navy:#132257; --home:#132257; --away:#c2780f; --pitch:#2f6b45; --pitch-line:rgba(255,255,255,.55);
+  --live:#d1303b; --good:#1f7a4d; --warn:#b7791f;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0a1029; --surface:#121b3d; --ink:#eef1fa; --muted:#9aa3c4; --line:#253160;
+  --navy:#0a1029; --home:#b9c6ff; --away:#f0a63a; --pitch:#1f4a31; --pitch-line:rgba(255,255,255,.4);
+  --live:#ff5a64; --good:#4cc38a; --warn:#e8b04a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0a1029; --surface:#121b3d; --ink:#eef1fa; --muted:#9aa3c4; --line:#253160;
+  --navy:#0a1029; --home:#b9c6ff; --away:#f0a63a; --pitch:#1f4a31; --pitch-line:rgba(255,255,255,.4);
+  --live:#ff5a64; --good:#4cc38a; --warn:#e8b04a; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.5 var(--body);
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+a{color:inherit}
+button,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--away);outline-offset:2px}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* board */
+.board{background:#132257;color:#fff}
+.board .wrap{padding-block:14px 22px;display:grid;gap:14px}
+.topbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+.brand{font-family:var(--display);font-weight:700;font-size:1.35rem;letter-spacing:.06em;text-transform:uppercase}
+.controls{display:flex;gap:8px;flex-wrap:wrap;min-width:0}
+.controls select,.controls button{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:6px 10px;color:#fff;max-width:100%}
+.controls select option{color:#000}
+.controls button{cursor:pointer}
+.meta{font-size:.9rem;opacity:.8;text-align:center}
+.score{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px}
+.team{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;min-width:0}
+.team img{width:56px;height:56px;object-fit:contain}
+.team .name{font-family:var(--display);font-weight:600;font-size:clamp(1.1rem,3.5vw,1.7rem);letter-spacing:.03em;text-transform:uppercase;text-wrap:balance}
+.goals{font-family:var(--display);font-weight:700;font-size:clamp(2.8rem,9vw,4.6rem);line-height:1;display:flex;gap:.35em;align-items:center}
+.goals .dash{opacity:.5}
+.status{display:flex;justify-content:center;gap:10px;align-items:center;flex-wrap:wrap}
+.pill{font-family:var(--display);font-weight:600;letter-spacing:.08em;text-transform:uppercase;font-size:.9rem;padding:3px 10px;border-radius:999px;background:rgba(255,255,255,.14)}
+.pill.live{background:#d1303b}
+.pill.live::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:#fff;margin-right:6px;animation:pulse 1.4s infinite}
+@keyframes pulse{50%{opacity:.25}}
+.scorers{display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:.88rem;opacity:.9}
+.scorers div:first-child{text-align:right}
+.flash{position:fixed;left:0;right:0;top:0;z-index:20;text-align:center;font-family:var(--display);font-weight:700;font-size:1.6rem;letter-spacing:.1em;text-transform:uppercase;padding:calc(12px + env(safe-area-inset-top,0px)) 16px 12px;background:var(--live);color:#fff}
+
+/* nav */
+nav.jump{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+nav.jump .wrap{display:flex;gap:4px;overflow-x:auto;padding-block:6px}
+nav.jump a{text-decoration:none;font-family:var(--display);font-weight:600;letter-spacing:.06em;text-transform:uppercase;font-size:.95rem;padding:6px 10px;border-radius:6px;white-space:nowrap;color:var(--muted)}
+nav.jump a:hover{color:var(--ink);background:var(--bg)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:#132257}
+
+main .wrap{padding-block:20px 40px;display:grid;gap:20px;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);align-items:start}
+@media (max-width:860px){main .wrap{grid-template-columns:minmax(0,1fr)}}
+.col{display:grid;gap:20px;min-width:0}
+section{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0;scroll-margin-top:60px}
+h2{font-family:var(--display);font-weight:700;font-size:1.25rem;letter-spacing:.07em;text-transform:uppercase;margin:0 0 12px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+h2 small{font-family:var(--body);font-weight:400;font-size:.8rem;letter-spacing:0;text-transform:none;color:var(--muted)}
+.empty{color:var(--muted);font-size:.95rem}
+.note{color:var(--muted);font-size:.82rem;margin-top:10px}
+
+/* lineups */
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:12px}
+.seg button{background:none;border:0;padding:6px 12px;cursor:pointer;font-family:var(--display);font-weight:600;letter-spacing:.05em;text-transform:uppercase}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+.pitchbox{max-width:460px;margin:0 auto}
+.pitchbox svg{width:100%;height:auto;display:block;border-radius:8px}
+.bench{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:4px 14px;font-size:.9rem;margin-top:12px}
+.bench .p{display:flex;gap:6px;align-items:baseline;min-width:0}
+.bench .p span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tag{font-size:.75rem;font-weight:700;padding:0 5px;border-radius:4px}
+.tag.in{background:var(--good);color:#fff}.tag.out{background:var(--muted);color:var(--surface)}
+.tag.y{background:#f2c200;color:#000}.tag.r{background:var(--live);color:#fff}
+
+/* stats */
+.statrow{display:grid;grid-template-columns:3.2em 1fr 3.2em;gap:8px;align-items:center;margin:8px 0}
+.statrow .lbl{grid-column:1/-1;text-align:center;font-size:.85rem;color:var(--muted);margin-bottom:-6px}
+.statrow .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.95rem}
+.statrow .v:last-child{text-align:right}
+.bar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--line);gap:2px}
+.bar i{display:block;height:100%}
+.bar .h{background:var(--home)}.bar .a{background:var(--away)}
+.legend{display:flex;justify-content:space-between;font-family:var(--display);font-weight:600;letter-spacing:.05em;text-transform:uppercase;font-size:.95rem}
+.legend .h{color:var(--home)}.legend .a{color:var(--away)}
+details summary{cursor:pointer;color:var(--muted);font-size:.9rem;margin-top:8px}
+.chart svg{width:100%;height:auto;display:block}
+
+/* analysis */
+.reads{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.reads li{border-left:3px solid var(--line);padding:2px 0 2px 12px}
+.reads li b{display:block;font-weight:700}
+
+/* feeds */
+.feed{list-style:none;margin:0;padding:0;display:grid;gap:0}
+.feed li{display:grid;grid-template-columns:3.6em 1fr;gap:10px;padding:9px 0;border-top:1px solid var(--line);min-width:0}
+.feed li:first-child{border-top:0}
+.feed .t{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.85rem;color:var(--muted);padding-top:2px}
+.feed .ev{font-weight:700}
+.feed li.goal .ev{color:var(--good)}
+.scroll{max-height:560px;overflow-y:auto;overscroll-behavior:contain}
+.links{display:grid;gap:10px;list-style:none;margin:0;padding:0}
+.links a{text-decoration:none;display:block}
+.links a:hover .hl{text-decoration:underline}
+.links .src{font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.links .hl{font-weight:600}
+.err{background:var(--live);color:#fff;border-radius:8px;padding:12px 14px;font-size:.95rem}
+footer .wrap{padding-block:0 32px;color:var(--muted);font-size:.85rem}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header class="board">
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">Spurs Match Centre</div>
+      <div class="controls">
+        <label for="match" hidden>Match</label>
+        <select id="match" aria-label="Choose a match"><option>Loading fixtures…</option></select>
+        <button id="refresh" type="button">Refresh</button>
+        <button id="theme" type="button" aria-label="Switch light or dark">Theme</button>
+      </div>
+    </div>
+    <div class="meta" id="meta">&nbsp;</div>
+    <div class="score">
+      <div class="team" id="homeTeam"><div class="name">—</div></div>
+      <div class="goals"><span id="hs">–</span><span class="dash">:</span><span id="as">–</span></div>
+      <div class="team" id="awayTeam"><div class="name">—</div></div>
+    </div>
+    <div class="status"><span class="pill" id="state">Loading</span><span class="num" id="clock"></span></div>
+    <div class="scorers"><div id="hScorers"></div><div id="aScorers"></div></div>
+  </div>
+</header>
+<div class="flash" id="flash" hidden></div>
+<nav class="jump" aria-label="Sections"><div class="wrap">
+  <a href="#lineups">Lineups</a><a href="#stats">Stats</a><a href="#analysis">Analysis</a><a href="#timeline">Timeline</a><a href="#commentary">Commentary</a><a href="#coverage">Coverage</a>
+</div></nav>
+<main><div class="wrap">
+  <div class="col">
+    <div id="errorBox" hidden></div>
+    <section id="lineups"><h2>Lineups <small id="formation"></small></h2><div id="lineupBody" class="empty">Lineups are usually announced about an hour before kick-off.</div></section>
+    <section id="stats"><h2>Match stats <small>both teams, live</small></h2><div id="statsBody" class="empty">Stats appear once the match starts.</div></section>
+    <section id="analysis"><h2>Analysis <small>generated from these numbers, not reporting</small></h2><div id="analysisBody" class="empty">A read of the game appears once there is data to read.</div></section>
+  </div>
+  <div class="col">
+    <section id="timeline"><h2>Key events</h2><div id="timelineBody" class="empty">No events yet.</div></section>
+    <section id="commentary"><h2>Live commentary <small>newest first</small></h2><div id="commentaryBody" class="empty">Minute-by-minute commentary starts at kick-off.</div></section>
+    <section id="coverage"><h2>Coverage</h2><div id="coverageBody"></div></section>
+  </div>
+</div></main>
+<footer><div class="wrap" id="foot">Data: ESPN's public match feed. Updates automatically. Expected goals (xG) is shown only if the feed provides it.</div></footer>
+
+<script>
+(function(){
+"use strict";
+var API="https://site.api.espn.com/apis/site/v2/sports/soccer/";
+var LEAGUES=[["eng.1","Premier League"],["eng.league_cup","Carabao Cup"],["eng.fa","FA Cup"],["uefa.champions","Champions League"],["uefa.europa","Europa League"],["uefa.europa.conf","Conference League"]];
+var TEAM="Tottenham";
+var $=function(id){return document.getElementById(id)};
+var current=null, timer=null, lastScore=null, lineupSide="home", lastData=null;
+
+/* ---------- helpers ---------- */
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+function ymd(d){return d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")}
+function getJSON(url){return fetch(url,{cache:"no-store"}).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json()})}
+function fmtKick(iso){var d=new Date(iso);return d.toLocaleString([], {weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}
+function store(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}}
+function logo(t){if(!t)return"";if(t.logo)return t.logo;if(t.logos&&t.logos[0])return t.logos[0].href;return""}
+function num(v){var n=parseFloat(String(v).replace("%",""));return isNaN(n)?null:n}
+
+/* ---------- theme ---------- */
+(function(){var t=store("theme");if(t)document.documentElement.setAttribute("data-theme",t)})();
+$("theme").addEventListener("click",function(){
+  var cur=document.documentElement.getAttribute("data-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");
+  var next=cur==="dark"?"light":"dark";document.documentElement.setAttribute("data-theme",next);store("theme",next)});
+
+/* ---------- fixtures ---------- */
+function loadFixtures(){
+  var now=new Date(),from=new Date(now-35*864e5),to=new Date(+now+70*864e5);
+  var range=ymd(from)+"-"+ymd(to);
+  return Promise.all(LEAGUES.map(function(L){
+    return getJSON(API+L[0]+"/scoreboard?dates="+range+"&limit=300").then(function(j){
+      return (j.events||[]).filter(function(e){
+        var c=(e.competitions&&e.competitions[0]&&e.competitions[0].competitors)||[];
+        return c.some(function(x){return x.team&&String(x.team.displayName||x.team.name).indexOf(TEAM)>=0});
+      }).map(function(e){return {id:e.id,league:L[0],leagueName:L[1],date:e.date,name:e.shortName||e.name,state:(e.status&&e.status.type&&e.status.type.state)||"pre"}});
+    }).catch(function(){return []});
+  })).then(function(lists){
+    var all=[].concat.apply([],lists).sort(function(a,b){return new Date(a.date)-new Date(b.date)});
+    if(!all.length)throw new Error("no fixtures");
+    var sel=$("match");sel.innerHTML="";
+    all.forEach(function(f){var o=document.createElement("option");o.value=f.league+"|"+f.id;
+      o.textContent=(f.state==="in"?"LIVE · ":"")+fmtKick(f.date)+" · "+f.name+" · "+f.leagueName;sel.appendChild(o)});
+    var pick=all.find(function(f){return f.state==="in"})||all.find(function(f){return f.state==="pre"})||all[all.length-1];
+    sel.value=pick.league+"|"+pick.id;
+    return pick;
+  });
+}
+
+/* ---------- summary ---------- */
+function loadMatch(league,id){
+  current={league:league,id:id};
+  return getJSON(API+league+"/summary?event="+id).then(function(d){
+    if(!current||current.id!==id)return;
+    lastData=d;hideError();render(d,league,id);schedule(d);
+  }).catch(function(e){showError("The live feed didn't answer ("+e.message+"). It will try again shortly. If this keeps happening, check your internet connection.");schedule(null)});
+}
+function schedule(d){
+  clearTimeout(timer);
+  var state=d?stateOf(d):"pre",ms=60000;
+  if(state==="in")ms=30000;
+  else if(state==="pre"){var k=new Date(comp(d).date||0)-Date.now();ms=k<2*36e5?60000:10*60000}
+  else if(state==="post")ms=10*60000;
+  timer=setTimeout(function(){if(current)loadMatch(current.league,current.id)},ms);
+}
+document.addEventListener("visibilitychange",function(){if(!document.hidden&&current)loadMatch(current.league,current.id)});
+function comp(d){return (d&&d.header&&d.header.competitions&&d.header.competitions[0])||{}}
+function stateOf(d){var s=comp(d).status;return (s&&s.type&&s.type.state)||"pre"}
+function sides(d){
+  var c=comp(d).competitors||[];
+  var h=c.find(function(x){return x.homeAway==="home"})||c[0]||{},a=c.find(function(x){return x.homeAway==="away"})||c[1]||{};
+  return {h:h,a:a};
+}
+
+function render(d,league,id){
+  var s=sides(d),c=comp(d),st=c.status||{},type=st.type||{};
+  var hn=(s.h.team&&s.h.team.displayName)||"Home",an=(s.a.team&&s.a.team.displayName)||"Away";
+  ["homeTeam","awayTeam"].forEach(function(k,i){var x=i?s.a:s.h;
+    $(k).innerHTML=(logo(x.team)?'<img alt="" src="'+esc(logo(x.team))+'">':"")+'<div class="name">'+esc(x.team?(x.team.shortDisplayName||x.team.displayName):"—")+"</div>"});
+  var state=type.state||"pre";
+  $("hs").textContent=state==="pre"?"–":(s.h.score!=null?s.h.score:0);
+  $("as").textContent=state==="pre"?"–":(s.a.score!=null?s.a.score:0);
+  var pill=$("state");pill.className="pill"+(state==="in"?" live":"");
+  pill.textContent=state==="in"?"Live":state==="post"?"Full time":"Kick-off "+fmtKick(c.date);
+  $("clock").textContent=state==="in"?(type.shortDetail||st.displayClock||""):state==="post"?(type.detail||""):"";
+  var venue=d.gameInfo&&d.gameInfo.venue&&d.gameInfo.venue.fullName;
+  var lg=(d.header&&d.header.league&&d.header.league.name)||LEAGUES.find(function(l){return l[0]===league})[1];
+  $("meta").textContent=[lg,venue,"Updated "+new Date().toLocaleTimeString([], {hour:"numeric",minute:"2-digit",second:"2-digit"})].filter(Boolean).join(" · ");
+  document.title=(state==="in"?"("+$("hs").textContent+"-"+$("as").textContent+") ":"")+"Spurs Match Centre";
+
+  // goal flash
+  var sc=$("hs").textContent+"-"+$("as").textContent;
+  if(lastScore&&lastScore.id===id&&lastScore.sc!==sc&&state==="in")flash("Goal! "+hn+" "+sc.replace("-"," – ")+" "+an);
+  lastScore={id:id,sc:sc};
+
+  var ev=d.keyEvents||[];
+  renderScorers(ev,s);
+  renderLineups(d,s);
+  var stats=renderStats(d,s);
+  var shots=parseShots(d.commentary||[],hn,an);
+  renderChart(shots,state);
+  renderAnalysis(stats,shots,d,s,state);
+  renderTimeline(ev,s);
+  renderCommentary(d.commentary||[]);
+  renderCoverage(d,league,id);
+}
+
+function flash(msg){var f=$("flash");f.textContent=msg;f.hidden=false;setTimeout(function(){f.hidden=true},6000)}
+
+function evTeamSide(e,s){var tid=e.team&&e.team.id;if(!tid)return null;if(s.h.team&&s.h.team.id===tid)return"h";if(s.a.team&&s.a.team.id===tid)return"a";return null}
+function evName(e){return (e.participants&&e.participants[0]&&e.participants[0].athlete&&e.participants[0].athlete.displayName)||""}
+function renderScorers(ev,s){
+  var h=[],a=[];
+  ev.forEach(function(e){if(!e.scoringPlay)return;var t=(e.clock&&e.clock.displayValue)||"";var line=esc(evName(e))+" "+esc(t);
+    (evTeamSide(e,s)==="a"?a:h).push(line)});
+  $("hScorers").innerHTML=h.join("<br>");$("aScorers").innerHTML=a.join("<br>");
+}
+
+/* ---------- lineups ---------- */
+function depthOf(p){
+  var ab=String((p.position&&p.position.abbreviation)||"").toUpperCase();
+  if(ab==="G"||ab==="GK")return 0;
+  if(/WB$/.test(ab))return 1.5;
+  if(/^(D|CB|CD|LB|RB|SW|CD-L|CD-R)/.test(ab)||ab.charAt(0)==="D"&&ab!=="DM")return 1;
+  if(/^(DM|CDM)/.test(ab))return 2;
+  if(/^(AM|CAM)/.test(ab))return 4;
+  if(/^(F|CF|ST|LF|RF|LW|RW|S)/.test(ab))return 5;
+  return 3;
+}
+function lateral(p){
+  var ab=String((p.position&&p.position.abbreviation)||"").toUpperCase();
+  if(/-L$/.test(ab))return -0.5;if(/-R$/.test(ab))return 0.5;
+  if(ab.charAt(0)==="L")return -1;if(ab.charAt(0)==="R")return 1;return 0;
+}
+function lines(starters,formation){
+  var gk=starters.filter(function(p){return depthOf(p)===0}),rest=starters.filter(function(p){return depthOf(p)!==0});
+  rest.sort(function(a,b){return depthOf(a)-depthOf(b)||(+a.formationPlace||0)-(+b.formationPlace||0)});
+  var counts=String(formation||"").split("-").map(Number).filter(function(n){return n>0});
+  var out=[gk];
+  if(counts.length&&counts.reduce(function(x,y){return x+y},0)===rest.length){
+    var i=0;counts.forEach(function(n){out.push(rest.slice(i,i+n));i+=n});
+  }else{var by={};rest.forEach(function(p){(by[depthOf(p)]=by[depthOf(p)]||[]).push(p)});
+    Object.keys(by).sort().forEach(function(k){out.push(by[k])})}
+  return out.map(function(l){return l.slice().sort(function(a,b){return lateral(a)-lateral(b)})});
+}
+function playerMarks(p){
+  var m="",plays=p.plays||[];
+  plays.forEach(function(x){if(x.yellowCard)m+="y";if(x.redCard)m+="r";if(x.didScore||x.scoringPlay)m+="g"});
+  return m;
+}
+function shortName(p){var a=p.athlete||{};return a.lastName||a.shortName||a.displayName||""}
+function renderLineups(d,s){
+  var r=d.rosters||[];
+  if(!r.length||!r.some(function(t){return (t.roster||[]).length})){
+    $("lineupBody").className="empty";$("lineupBody").textContent="Lineups are usually announced about an hour before kick-off.";$("formation").textContent="";return}
+  var side=r.find(function(t){return t.homeAway===lineupSide})||r[0];
+  var other=lineupSide==="home"?"away":"home";
+  var hn=(s.h.team&&s.h.team.shortDisplayName)||"Home",an=(s.a.team&&s.a.team.shortDisplayName)||"Away";
+  var roster=side.roster||[],starters=roster.filter(function(p){return p.starter}),bench=roster.filter(function(p){return !p.starter});
+  $("formation").textContent=side.formation?"Formation "+side.formation:"";
+  var L=lines(starters,side.formation),W=340,H=480,svg='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Starting lineup on a pitch">';
+  svg+='<rect width="'+W+'" height="'+H+'" fill="var(--pitch)"/>';
+  for(var k=0;k<8;k++)if(k%2)svg+='<rect x="0" y="'+(k*H/8)+'" width="'+W+'" height="'+(H/8)+'" fill="rgba(255,255,255,.035)"/>';
+  var ln='fill="none" stroke="var(--pitch-line)" stroke-width="2"';
+  svg+='<rect x="10" y="10" width="'+(W-20)+'" height="'+(H-20)+'" '+ln+'/><line x1="10" y1="'+H/2+'" x2="'+(W-10)+'" y2="'+H/2+'" stroke="var(--pitch-line)" stroke-width="2"/><circle cx="'+W/2+'" cy="'+H/2+'" r="40" '+ln+'/>';
+  svg+='<rect x="'+(W/2-80)+'" y="'+(H-10-70)+'" width="160" height="70" '+ln+'/><rect x="'+(W/2-36)+'" y="'+(H-10-26)+'" width="72" height="26" '+ln+'/>';
+  svg+='<rect x="'+(W/2-80)+'" y="10" width="160" height="70" '+ln+'/><rect x="'+(W/2-36)+'" y="10" width="72" height="26" '+ln+'/>';
+  var n=L.length,dotFill=lineupSide==="home"?"#132257":"#c2780f";
+  L.forEach(function(line,li){
+    var y=H-44-li*((H-100)/Math.max(n-1,1));
+    line.forEach(function(p,pi){
+      var x=W*(pi+1)/(line.length+1),m=playerMarks(p);
+      svg+='<g><circle cx="'+x+'" cy="'+y+'" r="15" fill="'+dotFill+'" stroke="#fff" stroke-width="2"/>';
+      svg+='<text x="'+x+'" y="'+(y+5)+'" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13" font-weight="500" fill="#fff">'+esc(p.jersey||"")+'</text>';
+      svg+='<text x="'+x+'" y="'+(y+31)+'" text-anchor="middle" font-family="Source Sans 3,sans-serif" font-size="12" font-weight="600" fill="#fff">'+esc(shortName(p)).slice(0,14)+'</text>';
+      if(p.subbedOut)svg+='<rect x="'+(x+9)+'" y="'+(y-19)+'" width="10" height="10" rx="2" fill="#5b6382"/><text x="'+(x+14)+'" y="'+(y-11)+'" text-anchor="middle" font-size="9" fill="#fff">↓</text>';
+      if(m.indexOf("r")>=0)svg+='<rect x="'+(x-19)+'" y="'+(y-20)+'" width="8" height="11" rx="1" fill="#d1303b"/>';
+      else if(m.indexOf("y")>=0)svg+='<rect x="'+(x-19)+'" y="'+(y-20)+'" width="8" height="11" rx="1" fill="#f2c200"/>';
+      if(m.indexOf("g")>=0)svg+='<circle cx="'+(x+15)+'" cy="'+(y+12)+'" r="5" fill="#fff" stroke="#000" stroke-width="1"/>';
+      svg+='</g>';
+    });
+  });
+  svg+='</svg>';
+  var b=bench.map(function(p){var tags="";if(p.subbedIn)tags+='<span class="tag in">IN</span>';var m=playerMarks(p);if(m.indexOf("y")>=0)tags+='<span class="tag y">Y</span>';if(m.indexOf("r")>=0)tags+='<span class="tag r">R</span>';
+    return '<div class="p"><span class="num">'+esc(p.jersey||"")+'</span>'+tags+'<span>'+esc((p.athlete&&p.athlete.displayName)||"")+'</span></div>'}).join("");
+  $("lineupBody").className="";
+  $("lineupBody").innerHTML='<div class="seg" role="group" aria-label="Team"><button type="button" data-side="home" aria-pressed="'+(lineupSide==="home")+'">'+esc(hn)+'</button><button type="button" data-side="away" aria-pressed="'+(lineupSide==="away")+'">'+esc(an)+'</button></div>'+
+    '<div class="pitchbox">'+svg+'</div><h2 style="margin-top:16px;font-size:1rem">Bench</h2><div class="bench">'+(b||'<span class="empty">Not listed yet.</span>')+'</div><p class="note">Positions are placed from the announced formation, so treat them as approximate. Attacking upward.</p>';
+  Array.prototype.forEach.call($("lineupBody").querySelectorAll(".seg button"),function(btn){btn.addEventListener("click",function(){lineupSide=btn.getAttribute("data-side");renderLineups(lastData,sides(lastData))})});
+}
+
+/* ---------- stats ---------- */
+var MAIN=[["possessionPct","Possession %"],["expectedGoals","Expected goals (xG)"],["totalShots","Shots"],["shotsOnTarget","Shots on target"],["wonCorners","Corners"],["totalPasses","Passes"],["passPct","Pass accuracy"],["accuratePasses","Accurate passes"],["totalTackles","Tackles"],["foulsCommitted","Fouls"],["offsides","Offsides"],["saves","Saves"],["yellowCards","Yellow cards"],["redCards","Red cards"]];
+function statMap(t){var m={};((t&&t.statistics)||[]).forEach(function(x){m[x.name]={v:x.displayValue,label:x.label||x.name}});return m}
+function renderStats(d,s){
+  var bt=(d.boxscore&&d.boxscore.teams)||[];
+  var hT=bt.find(function(t){return t.team&&s.h.team&&t.team.id===s.h.team.id})||bt[0],aT=bt.find(function(t){return t.team&&s.a.team&&t.team.id===s.a.team.id})||bt[1];
+  var H=statMap(hT),A=statMap(aT);
+  if(!Object.keys(H).length){$("statsBody").className="empty";$("statsBody").textContent="Stats appear once the match starts.";return null}
+  var used={},rows="";
+  function row(key,label){
+    var h=H[key],a=A[key];if(!h&&!a)return"";used[key]=1;
+    var hv=h?h.v:"0",av=a?a.v:"0",hn=num(hv)||0,an=num(av)||0,tot=hn+an;
+    var hp=tot?hn/tot*100:50;
+    return '<div class="statrow"><div class="lbl">'+esc(label)+'</div><div class="v">'+esc(hv)+'</div><div class="bar"><i class="h" style="width:'+hp+'%"></i><i class="a" style="width:'+(100-hp)+'%"></i></div><div class="v">'+esc(av)+'</div></div>';
+  }
+  MAIN.forEach(function(m){rows+=row(m[0],m[1])});
+  Object.keys(H).forEach(function(k){if(!used[k]&&/expected/i.test(k))rows=row(k,H[k].label)+rows});
+  var more="";Object.keys(H).forEach(function(k){if(!used[k])more+=row(k,H[k].label)});
+  var hn=(s.h.team&&s.h.team.shortDisplayName)||"Home",an=(s.a.team&&s.a.team.shortDisplayName)||"Away";
+  $("statsBody").className="";
+  $("statsBody").innerHTML='<div class="legend"><span class="h">'+esc(hn)+'</span><span class="a">'+esc(an)+'</span></div>'+rows+
+    (more?'<details><summary>More stats</summary>'+more+'</details>':"")+
+    '<h2 style="margin-top:18px;font-size:1rem">Attacking pressure <small>cumulative shots by minute</small></h2><div class="chart" id="chart"></div>';
+  return {H:H,A:A,hn:hn,an:an};
+}
+
+/* shots from commentary, e.g. "Attempt saved. Player (Team Name) right footed shot ..." */
+function minuteOf(c){var t=(c.time&&c.time.displayValue)||"";var m=t.match(/(\d+)(?:'|\+)?(?:\+(\d+))?/);if(!m)return null;return (+m[1])+(m[2]?(+m[2])/10:0)}
+function parseShots(com,hn,an){
+  var out={h:[],a:[]};
+  com.forEach(function(c){
+    var tx=String(c.text||"");if(!/^(Attempt|Goal!|Penalty saved|Penalty missed)/i.test(tx))return;
+    var mm=minuteOf(c);if(mm==null)return;
+    var team=(tx.match(/\(([^)]+)\)/)||[])[1]||"";
+    var side=team&&hn.indexOf(team)>=0||team&&team.indexOf(hn)>=0?"h":team&&(an.indexOf(team)>=0||team.indexOf(an)>=0)?"a":null;
+    if(!side){if(/Tottenham/.test(team)&&/Tottenham/.test(hn))side="h";else if(/Tottenham/.test(team))side="a"}
+    if(side)out[side].push({m:mm,goal:/^Goal!/i.test(tx),onT:/^Attempt saved|^Goal!/i.test(tx)});
+  });
+  out.h.sort(function(a,b){return a.m-b.m});out.a.sort(function(a,b){return a.m-b.m});
+  return out;
+}
+function renderChart(sh,state){
+  var el=$("chart");if(!el)return;
+  if(!sh.h.length&&!sh.a.length){el.innerHTML='<p class="empty">Builds from the commentary as shots happen.</p>';return}
+  var W=560,H=170,pl=30,pr=10,pt=10,pb=24,maxM=Math.max(90,Math.ceil(Math.max.apply(null,sh.h.concat(sh.a).map(function(x){return x.m}).concat([0]))/5)*5);
+  var maxY=Math.max(sh.h.length,sh.a.length,4);maxY=Math.ceil(maxY/2)*2;
+  var X=function(m){return pl+(W-pl-pr)*m/maxM},Y=function(v){return pt+(H-pt-pb)*(1-v/maxY)};
+  var g='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Cumulative shots chart">';
+  for(var v=0;v<=maxY;v+=maxY/2){g+='<line x1="'+pl+'" x2="'+(W-pr)+'" y1="'+Y(v)+'" y2="'+Y(v)+'" stroke="var(--line)" stroke-width="1"/><text x="'+(pl-6)+'" y="'+(Y(v)+4)+'" text-anchor="end" font-size="11" fill="var(--muted)" font-family="JetBrains Mono,monospace">'+v+'</text>'}
+  [0,15,30,45,60,75,90].forEach(function(m){if(m<=maxM)g+='<text x="'+X(m)+'" y="'+(H-6)+'" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="JetBrains Mono,monospace">'+m+"'"+'</text>'});
+  g+='<line x1="'+X(45)+'" x2="'+X(45)+'" y1="'+pt+'" y2="'+(H-pb)+'" stroke="var(--line)" stroke-dasharray="3 3"/>';
+  function step(arr,col){var p="M"+X(0)+","+Y(0),c=0;arr.forEach(function(s){p+=" H"+X(s.m);c++;p+=" V"+Y(c)});
+    var endM=state==="in"||state==="post"?Math.min(maxM,Math.max(arr.length?arr[arr.length-1].m:0,0)):0;p+=" H"+X(endM);
+    var s='<path d="'+p+'" fill="none" stroke="'+col+'" stroke-width="2.5"/>';c=0;
+    arr.forEach(function(x){c++;if(x.goal)s+='<circle cx="'+X(x.m)+'" cy="'+Y(c)+'" r="5" fill="'+col+'" stroke="var(--surface)" stroke-width="2"/>'});return s}
+  g+=step(sh.h,"var(--home)")+step(sh.a,"var(--away)")+'</svg>';
+  el.innerHTML=g+'<p class="note">Counted from the commentary feed. Dots mark goals.</p>';
+}
+
+/* ---------- analysis ---------- */
+function renderAnalysis(st,sh,d,s,state){
+  var box=$("analysisBody"),reads=[];
+  var r=d.rosters||[],fh=(r.find(function(t){return t.homeAway==="home"})||{}).formation,fa=(r.find(function(t){return t.homeAway==="away"})||{}).formation;
+  if(!st){
+    if(fh||fa){reads.push(["Shape",(st?st.hn:"Home")+" line up "+(fh||"?")+", the visitors "+(fa||"?")+"."])}
+    if(!reads.length){box.className="empty";box.textContent="A read of the game appears once there is data to read.";return}
+  }else{
+    var g=function(m,k){return num(m[k]&&m[k].v)||0};
+    var hn=st.hn,an=st.an,H=st.H,A=st.A;
+    if(fh||fa)reads.push(["Shape",hn+" set up in a "+(fh||"?")+", "+an+" in a "+(fa||"?")+"."+(fh&&fa&&fh.split("-")[0]!==fa.split("-")[0]?" Different back lines: "+fh.split("-")[0]+" versus "+fa.split("-")[0]+" defenders.":"")]);
+    var ph=g(H,"possessionPct"),pa=g(A,"possessionPct");
+    var shH=g(H,"totalShots"),shA=g(A,"totalShots"),otH=g(H,"shotsOnTarget"),otA=g(A,"shotsOnTarget");
+    if(ph&&Math.abs(ph-pa)>=12){var ctl=ph>pa?hn:an,oth=ph>pa?an:hn,cs=ph>pa?shH:shA,os=ph>pa?shA:shH;
+      reads.push(["Control",ctl+" have the ball ("+Math.max(ph,pa)+"% possession). "+(os>=cs&&os>0?oth+" are getting as many shots from less of it ("+os+" to "+cs+"), which points to a counter-attacking plan working.":oth+" are mostly defending deep and waiting for chances.")])}
+    else if(ph)reads.push(["Control","Possession is close to even ("+ph+"% to "+pa+"%), so neither side has taken over the midfield."]);
+    if(shH+shA>=4){var bt=shH>shA?hn:an,hi=Math.max(shH,shA),lo=Math.min(shH,shA);
+      if(hi>=lo*2&&hi-lo>=4)reads.push(["Chances",bt+" are out-shooting their opponents "+hi+" to "+lo+"."]);
+      ["h","a"].forEach(function(x){var tot=x==="h"?shH:shA,on=x==="h"?otH:otA,nm=x==="h"?hn:an;
+        if(tot>=6&&on/tot<0.25)reads.push(["Finishing",nm+" have only "+on+" of "+tot+" shots on target. Plenty of attempts, few that test the keeper."])})}
+    var cH=g(H,"wonCorners"),cA=g(A,"wonCorners");
+    if(cH+cA>=5&&Math.abs(cH-cA)>=4)reads.push(["Pressure",(cH>cA?hn:an)+" have won "+Math.max(cH,cA)+" corners to "+Math.min(cH,cA)+", a sign of sustained pressure in the final third."]);
+    var fH=g(H,"foulsCommitted"),fA=g(A,"foulsCommitted"),yc=g(H,"yellowCards")+g(A,"yellowCards"),rc=g(H,"redCards")+g(A,"redCards");
+    if(rc)reads.push(["Numbers",(g(H,"redCards")?hn:an)+" have had a player sent off, which usually forces a deeper, narrower shape for the rest of the match."]);
+    else if(fH+fA>=20||yc>=4)reads.push(["Temperature","A physical game: "+(fH+fA)+" fouls and "+yc+" yellow cards so far."]);
+    var pH=g(H,"passPct"),pA=g(A,"passPct");if(pH&&pA&&Math.abs(pH-pA)>=8)reads.push(["Build-up",(pH>pA?hn:an)+" are more secure on the ball ("+Math.max(pH,pA)+"% pass accuracy against "+Math.min(pH,pA)+"%)."]);
+    if(state==="in"){var last=Math.max.apply(null,sh.h.concat(sh.a).map(function(x){return x.m}).concat([0])),from=last-15;
+      var rh=sh.h.filter(function(x){return x.m>from}).length,ra=sh.a.filter(function(x){return x.m>from}).length;
+      if(rh+ra>=3&&rh!==ra)reads.push(["Momentum","In the last 15 minutes of play "+(rh>ra?hn:an)+" have taken "+Math.max(rh,ra)+" shots to "+Math.min(rh,ra)+"."])}
+    if(!reads.length)reads.push(["Even","Nothing in the numbers separates the teams yet."]);
+  }
+  box.className="";
+  box.innerHTML='<ul class="reads">'+reads.map(function(x){return '<li><b>'+esc(x[0])+'</b>'+esc(x[1])+'</li>'}).join("")+'</ul><p class="note">Rule-based reading of the stats above. It cannot see off-the-ball movement or the managers\' instructions.</p>';
+}
+
+/* ---------- feeds ---------- */
+function renderTimeline(ev,s){
+  var keep=ev.filter(function(e){var t=(e.type&&(e.type.text||e.type.type))||"";return !/kickoff|halftime|end|start/i.test(t)||e.scoringPlay});
+  if(!keep.length){$("timelineBody").className="empty";$("timelineBody").textContent="No events yet.";return}
+  $("timelineBody").className="";
+  $("timelineBody").innerHTML='<ul class="feed">'+keep.slice().reverse().map(function(e){
+    var side=evTeamSide(e,s),tn=side==="h"?(s.h.team&&s.h.team.shortDisplayName):side==="a"?(s.a.team&&s.a.team.shortDisplayName):"";
+    var label=(e.type&&e.type.text)||"Event";
+    return '<li class="'+(e.scoringPlay?"goal":"")+'"><span class="t">'+esc((e.clock&&e.clock.displayValue)||"")+'</span><div><div class="ev">'+esc(label)+(tn?" · "+esc(tn):"")+'</div><div>'+esc(e.text||evName(e))+'</div></div></li>'}).join("")+'</ul>';
+}
+function renderCommentary(com){
+  if(!com.length){$("commentaryBody").className="empty";$("commentaryBody").textContent="Minute-by-minute commentary starts at kick-off.";return}
+  var list=com.slice().sort(function(a,b){return (b.sequence||0)-(a.sequence||0)});
+  $("commentaryBody").className="scroll";
+  $("commentaryBody").innerHTML='<ul class="feed">'+list.map(function(c){var tx=String(c.text||"");
+    return '<li class="'+(/^Goal!/.test(tx)?"goal":"")+'"><span class="t">'+esc((c.time&&c.time.displayValue)||"")+'</span><div>'+esc(tx)+'</div></li>'}).join("")+'</ul>';
+}
+function renderCoverage(d,league,id){
+  var items=[];
+  if(d.article&&d.article.headline)items.push({src:"ESPN match report",hl:d.article.headline,href:(d.article.links&&d.article.links.web&&d.article.links.web.href)||("https://www.espn.com/soccer/match/_/gameId/"+id)});
+  ((d.news&&d.news.articles)||[]).slice(0,6).forEach(function(a){var h=a.links&&a.links.web&&a.links.web.href;if(h&&a.headline)items.push({src:"ESPN",hl:a.headline,href:h})});
+  var fixed=[
+    {src:"ESPN",hl:"Full gamecast for this match",href:"https://www.espn.com/soccer/match/_/gameId/"+id},
+    {src:"BBC Sport",hl:"Tottenham Hotspur news and live text",href:"https://www.bbc.com/sport/football/teams/tottenham-hotspur"},
+    {src:"Tottenham Hotspur",hl:"Official club site: team news and Spurs TV",href:"https://www.tottenhamhotspur.com/"},
+    {src:"Sky Sports",hl:"Spurs news, video and analysis",href:"https://www.skysports.com/tottenham-hotspur"},
+    {src:"The Athletic",hl:"Spurs coverage (subscription)",href:"https://www.nytimes.com/athletic/football/tottenham-hotspur/"},
+    {src:"Premier League",hl:"Official league site and match centre",href:"https://www.premierleague.com/"}];
+  $("coverageBody").innerHTML='<ul class="links">'+items.concat(fixed).map(function(x){return '<li><a href="'+esc(x.href)+'" target="_blank" rel="noopener"><div class="src">'+esc(x.src)+'</div><div class="hl">'+esc(x.hl)+'</div></a></li>'}).join("")+'</ul><p class="note">Headlines and links only. Each opens on the publisher\'s site.</p>';
+}
+
+function showError(m){var b=$("errorBox");b.className="err";b.textContent=m;b.hidden=false}
+function hideError(){$("errorBox").hidden=true}
+
+/* ---------- wire up ---------- */
+$("match").addEventListener("change",function(){var v=this.value.split("|");lastScore=null;lineupSide="home";loadMatch(v[0],v[1])});
+$("refresh").addEventListener("click",function(){if(current)loadMatch(current.league,current.id)});
+renderCoverage({}, "eng.1", "");
+loadFixtures().then(function(p){return loadMatch(p.league,p.id)}).catch(function(){
+  $("state").textContent="Offline";
+  showError("Couldn't reach the live data feed. Make sure you're online, then press Refresh. If you opened this page inside an app preview, open the file in Chrome or Safari instead: previews block outside data.");
+  $("match").innerHTML="<option>No fixtures loaded</option>";
+});
+$("refresh").addEventListener("click",function(){if(!current)location.reload()});
+})();
+</script>
+</body>
+</html>
