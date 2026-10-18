@@ -191,12 +191,21 @@ $("theme").addEventListener("click",function(){
   var next=cur==="dark"?"light":"dark";document.documentElement.setAttribute("data-theme",next);store("theme",next)});
 
 /* ---------- fixtures ---------- */
+/* the feed rejects date ranges but accepts a whole month (YYYYMM), so fetch month by month */
+var monthCache={};
+function months(from,to){var out=[],d=new Date(from.getFullYear(),from.getMonth(),1);
+  while(d<=to){out.push(d.getFullYear()+String(d.getMonth()+1).padStart(2,"0"));d=new Date(d.getFullYear(),d.getMonth()+1,1)}return out}
+function fetchMonths(league,from,to){
+  return Promise.all(months(from,to).map(function(m){var k=league+m;
+    if(!monthCache[k])monthCache[k]=getJSON(API+league+"/scoreboard?dates="+m).then(function(j){return j.events||[]}).catch(function(){delete monthCache[k];return []});
+    return monthCache[k];
+  })).then(function(lists){var seen={};return [].concat.apply([],lists).filter(function(e){if(seen[e.id])return false;seen[e.id]=1;return true})});
+}
 function loadFixtures(){
   var now=new Date(),from=new Date(now-35*864e5),to=new Date(+now+70*864e5);
-  var range=ymd(from)+"-"+ymd(to);
   var spursP=Promise.all(LEAGUES.map(function(L){
-    return getJSON(API+L[0]+"/scoreboard?dates="+range+"&limit=300").then(function(j){
-      return (j.events||[]).filter(function(e){
+    return fetchMonths(L[0],from,to).then(function(evs){
+      return evs.filter(function(e){
         var c=(e.competitions&&e.competitions[0]&&e.competitions[0].competitors)||[];
         return c.some(function(x){return x.team&&String(x.team.displayName||x.team.name).indexOf(TEAM)>=0});
       }).map(function(e){return {id:e.id,league:L[0],leagueName:L[1],date:e.date,name:e.shortName||e.name,state:(e.status&&e.status.type&&e.status.type.state)||"pre"}});
@@ -204,8 +213,8 @@ function loadFixtures(){
   }));
   // every Premier League match that kicked off in the last 7 days (any teams)
   var weekAgo=new Date(now-7*864e5);
-  var recentP=getJSON(API+"eng.1/scoreboard?dates="+ymd(weekAgo)+"-"+ymd(now)+"&limit=300").then(function(j){
-    return (j.events||[]).filter(function(e){
+  var recentP=fetchMonths("eng.1",weekAgo,now).then(function(evs){
+    return evs.filter(function(e){
       var st=(e.status&&e.status.type&&e.status.type.state)||"pre";
       return st!=="pre"&&new Date(e.date)>=weekAgo&&new Date(e.date)<=now;
     }).map(function(e){return {id:e.id,league:"eng.1",leagueName:"Premier League",date:e.date,name:e.shortName||e.name,state:(e.status&&e.status.type&&e.status.type.state)||"post"}});
@@ -374,7 +383,11 @@ function renderLineups(d,s){
 
 /* ---------- stats ---------- */
 var MAIN=[["possessionPct","Possession %"],["expectedGoals","Expected goals (xG)"],["totalShots","Shots"],["shotsOnTarget","Shots on target"],["wonCorners","Corners"],["totalPasses","Passes"],["passPct","Pass accuracy"],["accuratePasses","Accurate passes"],["totalTackles","Tackles"],["foulsCommitted","Fouls"],["offsides","Offsides"],["saves","Saves"],["yellowCards","Yellow cards"],["redCards","Red cards"]];
-function statMap(t){var m={};((t&&t.statistics)||[]).forEach(function(x){m[x.name]={v:x.displayValue,label:x.label||x.name}});return m}
+function statMap(t){var m={};((t&&t.statistics)||[]).forEach(function(x){
+  var v=x.displayValue,n=parseFloat(v);
+  // the feed sends accuracy rates as fractions (0.8 = 80%); possession is already a percentage
+  if(/Pct$/.test(x.name)&&x.name!=="possessionPct"&&!isNaN(n)&&n<=1)v=Math.round(n*100)+"%";
+  m[x.name]={v:v,label:x.label||x.name.replace(/([A-Z])/g," $1").replace(/^./,function(c){return c.toUpperCase()})}});return m}
 function renderStats(d,s){
   var bt=(d.boxscore&&d.boxscore.teams)||[];
   var hT=bt.find(function(t){return t.team&&s.h.team&&t.team.id===s.h.team.id})||bt[0],aT=bt.find(function(t){return t.team&&s.a.team&&t.team.id===s.a.team.id})||bt[1];
