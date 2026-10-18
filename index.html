@@ -194,20 +194,37 @@ $("theme").addEventListener("click",function(){
 function loadFixtures(){
   var now=new Date(),from=new Date(now-35*864e5),to=new Date(+now+70*864e5);
   var range=ymd(from)+"-"+ymd(to);
-  return Promise.all(LEAGUES.map(function(L){
+  var spursP=Promise.all(LEAGUES.map(function(L){
     return getJSON(API+L[0]+"/scoreboard?dates="+range+"&limit=300").then(function(j){
       return (j.events||[]).filter(function(e){
         var c=(e.competitions&&e.competitions[0]&&e.competitions[0].competitors)||[];
         return c.some(function(x){return x.team&&String(x.team.displayName||x.team.name).indexOf(TEAM)>=0});
       }).map(function(e){return {id:e.id,league:L[0],leagueName:L[1],date:e.date,name:e.shortName||e.name,state:(e.status&&e.status.type&&e.status.type.state)||"pre"}});
     }).catch(function(){return []});
-  })).then(function(lists){
-    var all=[].concat.apply([],lists).sort(function(a,b){return new Date(a.date)-new Date(b.date)});
-    if(!all.length)throw new Error("no fixtures");
+  }));
+  // every Premier League match that kicked off in the last 7 days (any teams)
+  var weekAgo=new Date(now-7*864e5);
+  var recentP=getJSON(API+"eng.1/scoreboard?dates="+ymd(weekAgo)+"-"+ymd(now)+"&limit=300").then(function(j){
+    return (j.events||[]).filter(function(e){
+      var st=(e.status&&e.status.type&&e.status.type.state)||"pre";
+      return st!=="pre"&&new Date(e.date)>=weekAgo&&new Date(e.date)<=now;
+    }).map(function(e){return {id:e.id,league:"eng.1",leagueName:"Premier League",date:e.date,name:e.shortName||e.name,state:(e.status&&e.status.type&&e.status.type.state)||"post"}});
+  }).catch(function(){return []});
+  return Promise.all([spursP,recentP]).then(function(res){
+    var recent=res[1].sort(function(a,b){return new Date(b.date)-new Date(a.date)});
+    var seen={};recent.forEach(function(f){seen[f.id]=1});
+    var spurs=[].concat.apply([],res[0]).filter(function(f){return !seen[f.id]}).sort(function(a,b){return new Date(a.date)-new Date(b.date)});
+    if(!recent.length&&!spurs.length)throw new Error("no fixtures");
     var sel=$("match");sel.innerHTML="";
-    all.forEach(function(f){var o=document.createElement("option");o.value=f.league+"|"+f.id;
-      o.textContent=(f.state==="in"?"LIVE · ":"")+fmtKick(f.date)+" · "+f.name+" · "+f.leagueName;sel.appendChild(o)});
-    var pick=all.find(function(f){return f.state==="in"})||all.find(function(f){return f.state==="pre"})||all[all.length-1];
+    function group(label,list){if(!list.length)return;var g=document.createElement("optgroup");g.label=label;
+      list.forEach(function(f){var o=document.createElement("option");o.value=f.league+"|"+f.id;
+        o.textContent=(f.state==="in"?"LIVE · ":"")+fmtKick(f.date)+" · "+f.name+(f.league==="eng.1"?"":" · "+f.leagueName);g.appendChild(o)});
+      sel.appendChild(g)}
+    group("Premier League · last 7 days",recent);
+    group("Spurs fixtures",spurs);
+    var all=recent.concat(spurs);
+    // live match first, then the most recent match that has started, then the next Spurs match
+    var pick=all.find(function(f){return f.state==="in"})||recent[0]||spurs.find(function(f){return f.state==="pre"})||spurs[spurs.length-1];
     sel.value=pick.league+"|"+pick.id;
     return pick;
   });
@@ -263,7 +280,7 @@ function render(d,league,id){
   renderScorers(ev,s);
   renderLineups(d,s);
   var stats=renderStats(d,s);
-  var shots=parseShots(d.commentary||[],hn,an);
+  var shots=parseShots(d.commentary||[],[hn,s.h.team&&s.h.team.shortDisplayName,s.h.team&&s.h.team.name],[an,s.a.team&&s.a.team.shortDisplayName,s.a.team&&s.a.team.name]);
   renderChart(shots,state);
   renderAnalysis(stats,shots,d,s,state);
   renderTimeline(ev,s);
@@ -389,8 +406,8 @@ function parseShots(com,hn,an){
     var tx=String(c.text||"");if(!/^(Attempt|Goal!|Penalty saved|Penalty missed)/i.test(tx))return;
     var mm=minuteOf(c);if(mm==null)return;
     var team=(tx.match(/\(([^)]+)\)/)||[])[1]||"";
-    var side=team&&hn.indexOf(team)>=0||team&&team.indexOf(hn)>=0?"h":team&&(an.indexOf(team)>=0||team.indexOf(an)>=0)?"a":null;
-    if(!side){if(/Tottenham/.test(team)&&/Tottenham/.test(hn))side="h";else if(/Tottenham/.test(team))side="a"}
+    function is(names){return !!team&&names.some(function(n){return n&&(n.indexOf(team)>=0||team.indexOf(n)>=0)})}
+    var side=is(hn)?"h":is(an)?"a":null;
     if(side)out[side].push({m:mm,goal:/^Goal!/i.test(tx),onT:/^Attempt saved|^Goal!/i.test(tx)});
   });
   out.h.sort(function(a,b){return a.m-b.m});out.a.sort(function(a,b){return a.m-b.m});
@@ -470,7 +487,13 @@ function renderCoverage(d,league,id){
   var items=[];
   if(d.article&&d.article.headline)items.push({src:"ESPN match report",hl:d.article.headline,href:(d.article.links&&d.article.links.web&&d.article.links.web.href)||("https://www.espn.com/soccer/match/_/gameId/"+id)});
   ((d.news&&d.news.articles)||[]).slice(0,6).forEach(function(a){var h=a.links&&a.links.web&&a.links.web.href;if(h&&a.headline)items.push({src:"ESPN",hl:a.headline,href:h})});
-  var fixed=[
+  var s=d.header?sides(d):null,isSpurs=!s||[s.h,s.a].some(function(x){return x.team&&/Tottenham/.test(x.team.displayName||"")});
+  var fixed=isSpurs?[]:[
+    {src:"ESPN",hl:"Full gamecast for this match",href:"https://www.espn.com/soccer/match/_/gameId/"+id},
+    {src:"BBC Sport",hl:"Premier League scores, live text and reports",href:"https://www.bbc.com/sport/football/premier-league/scores-fixtures"},
+    {src:"Sky Sports",hl:"Premier League news, video and analysis",href:"https://www.skysports.com/premier-league"},
+    {src:"Premier League",hl:"Official league site and match centre",href:"https://www.premierleague.com/"}];
+  if(isSpurs)fixed=[
     {src:"ESPN",hl:"Full gamecast for this match",href:"https://www.espn.com/soccer/match/_/gameId/"+id},
     {src:"BBC Sport",hl:"Tottenham Hotspur news and live text",href:"https://www.bbc.com/sport/football/teams/tottenham-hotspur"},
     {src:"Tottenham Hotspur",hl:"Official club site: team news and Spurs TV",href:"https://www.tottenhamhotspur.com/"},
